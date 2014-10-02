@@ -1,0 +1,150 @@
+ISO_BASE=/Users/Shared/software/oracle/OEL
+VBOX_APPL_RES="/Applications/VirtualBox.app/Contents/MacOS/"
+VBOX_VM_BASE=${VBOX_VM_BASE-"$HOME/VirtualBox VMs"}
+VBOX_INFO=${VBOX_INFO-"$HOME/vbox"}
+KICK_START_KEYS=thuis.ronr.nl:/Library/Server/Web/Data/Sites/Default/
+
+if [ $# -ne 2 ]
+then
+  echo "$0 vmname install.iso" >&2
+  echo "   to be created" >&2
+  echo " where install.iso is one of `ls ${ISO_BASE}`" >&2
+  exit 1
+fi
+vmname=$1
+isoname=$2
+VM_INFO="$VBOX_INFO/${vmname}"
+
+if [ ! -d "$VBOX_VM_BASE" ]
+then
+  echo "$0 directory $VBOX_VM_BASE nonexistent" >&2
+  exit 1
+fi
+
+if [ ! -f ${ISO_BASE}/${isoname} ]
+then
+  echo "$0 iso $isoname not in $ISO_BASE" >&2
+  exit 2
+fi
+
+if [ -d "$VBOX_VM_BASE/${vmname}" ]
+then
+  echo "$0 ${vmname} already in $VBOX_VM_BASE" >&2
+  exit 3
+fi
+
+if [ -f "$VBOX_VM_BASE/${vmname}/${vmname}.vbox" ]
+then
+  echo "$0 ${vmname} already in $VBOX_VM_BASE" >&2
+  exit 3
+fi
+
+if [ ! -d "$VM_INFO" ]
+then
+  mkdir -p "$VM_INFO"
+fi
+
+if [ -f "${VM_INFO}/${vmname}.info" ]
+then
+  echo "$0 Re using settings from previous $vmname"
+  if [ -f "${VM_INFO}/${vmname}_host_keys.tar.gz" ]
+  then
+    scp -p "${VM_INFO}/${vmname}_host_keys.tar.gz" "$KICK_START_KEYS"
+  fi
+fi
+
+bridge_nic=`ifconfig | pcregrep -M -o '^[^\t:]+:([^\n]|\n\t)*status: active'| \
+                       grep "^[a-z].*:"|cut -f1 -d":"|sort|head -1`
+case $bridge_nic in
+en0) type=Ethernet;;
+en1) type="Wi-Fi (AirPort)";;
+*)   type=geenID;;
+esac
+
+echo "$0 for Bridged using $bridge_nic $type"
+
+VBoxManage createvm --name "$vmname" --register 
+if [ $? -ne 0 ]
+then
+  echo "$0 createvm for ${vmname} failed" >&2
+  exit 10
+fi
+
+VBoxManage modifyvm "$vmname" --memory 1024
+VBoxManage modifyvm "$vmname" --cpus 2
+VBoxManage modifyvm "$vmname" --ioapic on
+VBoxManage modifyvm "$vmname" --acpi on
+VBoxManage modifyvm "${vmname}" --boot1 disk --boot2 net --boot3 DVD --boot4 none
+#
+# # kickstart from tftp only supported using NAT
+#
+VBoxManage modifyvm "${vmname}" --nic1 NAT
+VBoxManage modifyvm "${vmname}" --nattftpfile1 /pxelinux.0
+VBoxManage modifyvm "${vmname}" --nic2 bridged  --bridgeadapter2   "${bridge_nic}: ${type}"
+
+VBoxManage modifyvm "$vmname" --nictype1 "82540EM"
+VBoxManage modifyvm "$vmname" --nictype2 "82540EM"
+
+if [ -f "$VM_INFO/${vmname}.info" ]
+then
+ echo "$0 Re using saved macadresses"
+ grep "^NIC" $VM_INFO/${vmname}.info|grep " MAC:"|cut -f1 -d","|sed "s/:/ /g"|
+   while read x NICn x MACa
+   do
+    echo "$0 Re using $MACa for NIC${NICn}"
+    VBoxManage modifyvm "${vmname}" --macaddress${NICn} "${MACa}"
+   done
+fi
+
+VBoxManage modifyvm "$vmname" --ostype "Oracle_64"
+#
+VBoxManage storagectl "${vmname}" --name "SATA Controller" --add sata 
+VBoxManage storagectl "${vmname}" --name "IDE Controller" --add ide 
+# # create disks
+VBoxManage createvdi --filename "$VBOX_VM_BASE/${vmname}/${vmname}-disk01.vdi" --size 64000  # 64g
+VBoxManage createvdi --filename "$VBOX_VM_BASE/${vmname}/${vmname}-disk02.vdi" --size 64000  # 64g
+VBoxManage createvdi --filename "$VBOX_VM_BASE/${vmname}/${vmname}-disk03.vdi" --size 64000  # 64g
+
+VBoxManage storageattach "${vmname}" --storagectl "SATA Controller"                             \
+                                     --port 0 --device 0 --type hdd                            \
+                                     --medium "$VBOX_VM_BASE/${vmname}/${vmname}-disk01.vdi"
+
+VBoxManage storageattach "${vmname}" --storagectl "SATA Controller"                             \
+                                     --port 1 --device 0 --type hdd                            \
+                                     --medium "$VBOX_VM_BASE/${vmname}/${vmname}-disk02.vdi"
+
+VBoxManage storageattach "${vmname}" --storagectl "SATA Controller"                             \
+                                     --port 2 --device 0 --type hdd                            \
+                                     --medium "$VBOX_VM_BASE/${vmname}/${vmname}-disk03.vdi"
+
+VBoxManage storageattach "${vmname}" --storagectl "IDE Controller"                             \
+                                     --port 0 --device 1 --type dvddrive                       \
+                                     --medium "${ISO_BASE}/${isoname}"
+##                                   --medium emptydrive
+                                     ## /dev/sr0
+
+## boot devices .... no cd no cdrom
+echo "$0 Installing ${vmname} using kickstart form TFTP"
+VBoxHeadless --startvm "${vmname}"
+echo not $0 VBoxManage startvm "${vmname}"
+##
+## the kickstart script will shutdown the guest
+##
+echo "$0 Basic OS install of ${vmname} is complete replace NAT interface by hostonly"
+## convert nic1 back to hostonly
+VBoxManage modifyvm "$vmname" --nic1 hostonly --hostonlyadapter1 vboxnet0
+VBoxManage showvminfo ${vmname} >$VM_INFO/${vmname}.info
+
+#
+# # replace installer disc by guest host additions disc
+#
+VBoxManage storageattach "${vmname}" --storagectl "IDE Controller"                             \
+                                     --port 0 --device 1 --type dvddrive                       \
+                                     --medium "$VBOX_APPL_RES/VBoxGuestAdditions.iso"
+##                                   --medium emptydrive
+                                     ## device0 /dev/sr0
+                                     ## device1 /dev/sr1
+VBoxManage startvm "${vmname}"
+#
+# # use ansible to finish the setup, including guest additions
+#
