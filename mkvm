@@ -1,23 +1,41 @@
+#
+# # simple script to generate new vm using specified iso to install from and
+# #                                        specified kickstart menu to boot from
 ISO_BASE=/Users/Shared/software/oracle/OEL
 VBOX_APPL_RES="/Applications/VirtualBox.app/Contents/MacOS/"
 VBOX_VM_BASE=${VBOX_VM_BASE-"$HOME/VirtualBox VMs"}
 VBOX_INFO=${VBOX_INFO-"$HOME/vbox"}
 KICK_START_KEYS=thuis.ronr.nl:/Library/Server/Web/Data/Sites/Default/
+TFTP_DIR=${TFTP_DIR-"${HOME}/Library/VirtualBox/TFTP"}
+PXEMENU=${TFTP_DIR}/pxelinux.cfg/default
 
-if [ $# -ne 2 ]
+if [ $# -ne 3 ]
 then
-  echo "$0 vmname install.iso" >&2
-  echo "   to be created" >&2
-  echo " where install.iso is one of `ls ${ISO_BASE}`" >&2
+  {
+  echo "$0 vmname install.iso kickstart_label#"
+  echo "   to be created"
+  echo " where install.iso is one of `ls ${ISO_BASE}`"
+  echo " and kickstart_option one of"
+  if [ -f $PXEMENU ]
+  then
+    echo "Choose the label # needed for this vm"
+    cat $PXEMENU
+  else
+    echo "$PXEMENU does not exist"
+    echo " create this first"
+  fi
+  } >&2
   exit 1
 fi
 vmname=$1
 isoname=$2
+pxelabel=$3
 VM_INFO="$VBOX_INFO/${vmname}"
 
 if [ ! -d "$VBOX_VM_BASE" ]
 then
   echo "$0 directory $VBOX_VM_BASE nonexistent" >&2
+  echo bijna goed
   exit 1
 fi
 
@@ -38,6 +56,22 @@ then
   echo "$0 ${vmname} already in $VBOX_VM_BASE" >&2
   exit 3
 fi
+
+grep -i "^label" $PXEMENU|awk '{print $2}'|grep $pxelabel >/dev/null
+if [ $? -ne 0 ]
+then
+  echo "pxe label specified $pxelabel should be one of" >&2
+  grep -i "^label" $PXEMENU|awk '{print $2}' >&2
+  exit 4
+fi
+
+# remove possible current default choice
+sed '/menu default/d' $PXEMENU >.mkvm.default.$$
+# and make this label the current default
+sed '/^label '${pxelabel}$'/a\
+  menu default
+' .mkvm.default.$$ >$PXEMENU
+rm .mkvm.default.$$
 
 if [ ! -d "$VM_INFO" ]
 then
@@ -63,17 +97,17 @@ esac
 
 echo "$0 for Bridged using $bridge_nic $type"
 
-VBoxManage createvm --name "$vmname" --register 
+VBoxManage createvm --name "${vmname}" --register 
 if [ $? -ne 0 ]
 then
   echo "$0 createvm for ${vmname} failed" >&2
   exit 10
 fi
 
-VBoxManage modifyvm "$vmname" --memory 1024
-VBoxManage modifyvm "$vmname" --cpus 2
-VBoxManage modifyvm "$vmname" --ioapic on
-VBoxManage modifyvm "$vmname" --acpi on
+VBoxManage modifyvm "${vmname}" --memory 1024
+VBoxManage modifyvm "${vmname}" --cpus 2
+VBoxManage modifyvm "${vmname}" --ioapic on
+VBoxManage modifyvm "${vmname}" --acpi on
 VBoxManage modifyvm "${vmname}" --boot1 disk --boot2 net --boot3 DVD --boot4 none
 #
 # # kickstart from tftp only supported using NAT
@@ -82,8 +116,8 @@ VBoxManage modifyvm "${vmname}" --nic1 NAT
 VBoxManage modifyvm "${vmname}" --nattftpfile1 /pxelinux.0
 VBoxManage modifyvm "${vmname}" --nic2 bridged  --bridgeadapter2   "${bridge_nic}: ${type}"
 
-VBoxManage modifyvm "$vmname" --nictype1 "82540EM"
-VBoxManage modifyvm "$vmname" --nictype2 "82540EM"
+VBoxManage modifyvm "${vmname}" --nictype1 "82540EM"
+VBoxManage modifyvm "${vmname}" --nictype2 "82540EM"
 
 if [ -f "$VM_INFO/${vmname}.info" ]
 then
@@ -96,7 +130,7 @@ then
    done
 fi
 
-VBoxManage modifyvm "$vmname" --ostype "Oracle_64"
+VBoxManage modifyvm "${vmname}" --ostype "Oracle_64"
 #
 VBoxManage storagectl "${vmname}" --name "SATA Controller" --add sata 
 VBoxManage storagectl "${vmname}" --name "IDE Controller" --add ide 
@@ -132,7 +166,7 @@ echo not $0 VBoxManage startvm "${vmname}"
 ##
 echo "$0 Basic OS install of ${vmname} is complete replace NAT interface by hostonly"
 ## convert nic1 back to hostonly
-VBoxManage modifyvm "$vmname" --nic1 hostonly --hostonlyadapter1 vboxnet0
+VBoxManage modifyvm "${vmname}" --nic1 hostonly --hostonlyadapter1 vboxnet0
 VBoxManage showvminfo ${vmname} >$VM_INFO/${vmname}.info
 
 #
