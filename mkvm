@@ -1,7 +1,7 @@
 #
 # # simple script to generate new vm using specified iso to install from and
 # #                                        specified kickstart menu to boot from
-ISO_BASE=/Users/Shared/software/oracle/OEL
+ISO_BASE=${ISO_BASE-/Users/Shared/software/oracle/OEL}
 VBOX_APPL_RES="/Applications/VirtualBox.app/Contents/MacOS/"
 VBOX_VM_BASE=${VBOX_VM_BASE-"$HOME/VirtualBox VMs"}
 VBOX_INFO=${VBOX_INFO-"$HOME/vbox"}
