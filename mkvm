@@ -1,4 +1,4 @@
-#
+#!/usr/bin/env bash
 # # simple script to generate new vm using specified iso to install from and
 # #                                        specified kickstart menu to boot from
 ISO_BASE=${ISO_BASE-/Users/Shared/software/oracle/OEL}
@@ -88,7 +88,7 @@ then
 fi
 
 bridge_nic=`ifconfig | pcregrep -M -o '^[^\t:]+:([^\n]|\n\t)*status: active'| \
-                       grep "^[a-z].*:"|cut -f1 -d":"|sort|head -1`
+                       grep "^[a-z].*:"|cut -f1 -d":"|sort|grep en|head -1`
 case $bridge_nic in
 en0) type=Ethernet;;
 en1) type="Wi-Fi (AirPort)";;
@@ -116,8 +116,9 @@ VBoxManage modifyvm "${vmname}" --nic1 NAT
 VBoxManage modifyvm "${vmname}" --nattftpfile1 /pxelinux.0
 VBoxManage modifyvm "${vmname}" --nic2 bridged  --bridgeadapter2   "${bridge_nic}: ${type}"
 
-VBoxManage modifyvm "${vmname}" --nictype1 "82540EM"
-VBoxManage modifyvm "${vmname}" --nictype2 "82540EM"
+# default is Am79C973
+# VBoxManage modifyvm "${vmname}" --nictype1 "82540EM"
+# VBoxManage modifyvm "${vmname}" --nictype2 "82540EM"
 
 if [ -f "$VM_INFO/${vmname}.info" ]
 then
