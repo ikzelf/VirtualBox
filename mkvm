@@ -19,6 +19,7 @@ then
   if [ -f $PXEMENU ]
   then
     echo "Choose the label # needed for this vm"
+    echo "pxe menu in:$PXEMENU:"
     cat $PXEMENU
   else
     echo "$PXEMENU does not exist"
@@ -88,7 +89,7 @@ then
 fi
 
 bridge_nic=`ifconfig | pcregrep -M -o '^[^\t:]+:([^\n]|\n\t)*status: active'| \
-                       grep "^[a-z].*:"|cut -f1 -d":"|sort|grep en|head -1`
+                       grep "^[a-z].*:"|cut -f1 -d":"|sort|grep -v "awdl" |head -1`
 case $bridge_nic in
 en0) type=Ethernet;;
 en1) type="Wi-Fi (AirPort)";;
